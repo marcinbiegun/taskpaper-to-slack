@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -13,45 +14,101 @@ import (
 // [ ] read data from taskpaper file
 // [ ] send data to Slack (replace message)
 
-func lineDepth(line string) (result int) {
-	rp := regexp.MustCompile(`\t*`)
-	tabsString := rp.FindString(line)
-	if tabsString == "" {
-		return 0
-	} else {
-		foundTabStrings := rp.FindAllString(tabsString, -1)
-		return len(foundTabStrings)
+func taskpaperToSlackHeader(taskpaper string) (result string) {
+	tagAndAfterRe := regexp.MustCompile("@.*")
+	taskpaper = tagAndAfterRe.ReplaceAllString(taskpaper, "")
+	colonAndAfterRe := regexp.MustCompile(":.*")
+	taskpaper = colonAndAfterRe.ReplaceAllString(taskpaper, "")
+
+	return ":calendar: *" + taskpaper + "*"
+}
+
+func taskpaperToSlackLine(taskpaper string) (result string) {
+	taskpaper = taskpaperReduceDepth(taskpaper, 1)
+	taskSymbolRe := regexp.MustCompile("- ")
+	taskpaper = taskSymbolRe.ReplaceAllString(taskpaper, ":todo: ")
+	tabRe := regexp.MustCompile("\t")
+	taskpaper = tabRe.ReplaceAllString(taskpaper, "      ")
+
+	return taskpaper
+}
+
+func taskpaperToSlack(taskpaper string) (result string) {
+	lines := strings.Split(taskpaper, "\n")
+	if len(lines) == 0 {
+		return ""
 	}
+
+	resultLines := make([]string, 0)
+
+	for index, line := range lines {
+		if index == 0 {
+			resultLines = append(resultLines, taskpaperToSlackHeader(line))
+		} else {
+			resultLines = append(resultLines, taskpaperToSlackLine(line))
+		}
+	}
+
+	return strings.Join(resultLines, "\n")
+}
+
+func lineDepth(line string) (result int) {
+	prefixTabsRe := regexp.MustCompile(`^\t*`)
+	found := prefixTabsRe.FindString(line)
+	if found == "" {
+		return 0
+	}
+	return len(found)
 }
 
 func isTodayHeader(line string) (result bool) {
-	match, _ := regexp.MatchString(`@slack\(\d{4}-\d{2}-\d{2},[a-zA-Z0-9]+\)`, line)
+	// match, _ := regexp.MatchString(`@slack\(\d{4}-\d{2}-\d{2},[a-zA-Z0-9]+\)`, line)
+	match, _ := regexp.MatchString(`@slack\([a-zA-Z0-9]+\)`, line)
 	return match
 }
 
-func extractToday(content string) (result string) {
+func taskpaperReduceDepth(line string, amount int) (result string) {
+	re := regexp.MustCompile("^\t{" + strconv.Itoa(amount) + "}")
+	return re.ReplaceAllString(line, "")
+}
+
+func taskpaperFindSlackNode(content string) (result string) {
 	lines := strings.Split(content, "\n")
-	todayLines := make([]string, 1000)
+	readLines := make([]string, 0)
+	reading := false
+	readingDepth := 0
 
-	startedHeader := false
-	startedDepth := 0
-	if true {
-		startedDepth = startedDepth + 0
+	for _, line := range lines {
+		if reading == true {
+			if lineDepth(line) < readingDepth {
+				break
+			}
+		}
+		if reading == false && isTodayHeader(line) {
+			reading = true
+			readingDepth = lineDepth(line)
+		}
+		if reading == true {
+			readLines = append(readLines, line)
+		}
 	}
 
-	for index, line := range lines {
-		// fmt.Println("Line " + strconv.Itoa(index) + ":")
-		// fmt.Println(line)
-		if isTodayHeader(line) {
-			startedHeader = true
-			startedDepth = index
-		}
-		if startedHeader {
-			todayLines = append(todayLines, line)
-		}
+	if len(readLines) == 0 {
+		return ""
 	}
 
-	return content
+	readLinesCorrectedDepth := make([]string, len(readLines))
+	depth := lineDepth(readLines[0])
+	for i, line := range readLines {
+		readLinesCorrectedDepth[i] = taskpaperReduceDepth(line, depth)
+	}
+	return strings.Join(readLinesCorrectedDepth, "\n")
+}
+
+func getMessageToSync(taskpaper string) (msgid string, result string) {
+	taskpaperNode := taskpaperFindSlackNode(taskpaper)
+	slackMessage := taskpaperToSlack(taskpaperNode)
+	return "asd", slackMessage
 }
 
 func main() {
@@ -69,8 +126,8 @@ func main() {
 		return
 	}
 
-	todayTaskpaper := extractToday(string(data))
+	msgid, message := getMessageToSync(string(data))
 
-	fmt.Println("found today block:")
-	fmt.Println(todayTaskpaper)
+	fmt.Println("Slack Message ID: " + msgid)
+	fmt.Println("Slack Message Content:\n" + message)
 }

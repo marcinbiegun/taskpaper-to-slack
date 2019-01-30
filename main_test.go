@@ -20,38 +20,83 @@ func TestTaskpaperToSlackHeader(t *testing.T) {
 func TestTaskpaperToSlackLine(t *testing.T) {
 	source := `	- getmilk`
 	target := `:todo: getmilk`
-
 	result := taskpaperToSlackLine(source)
 	if result != target {
-		t.Error("Bad transition to slack line format")
 		t.Error("Expected: \n" + target)
 		t.Error("Got: \n" + result)
 	}
 
 	source = `		- getmilk`
 	target = `      :todo: getmilk`
-
 	result = taskpaperToSlackLine(source)
 	if result != target {
-		t.Error("Bad transition to slack line format")
+		t.Error("Expected: \n" + target)
+		t.Error("Got: \n" + result)
+	}
+
+	source = `- getmilk @done`
+	target = `:done: getmilk`
+	result = taskpaperToSlackLine(source)
+	if result != target {
+		t.Error("Expected: \n" + target)
+		t.Error("Got: \n" + result)
+	}
+
+	source = `- getmilk @done(2018-21-29) @doing x`
+	target = `:done: getmilk`
+	result = taskpaperToSlackLine(source)
+	if result != target {
+		t.Error("Expected: \n" + target)
+		t.Error("Got: \n" + result)
+	}
+
+	source = `- getmilk @doing asd`
+	target = `:doing: getmilk`
+	result = taskpaperToSlackLine(source)
+	if result != target {
 		t.Error("Expected: \n" + target)
 		t.Error("Got: \n" + result)
 	}
 }
 
+func TestTaskpaperGetSlackMsgId(t *testing.T) {
+	source := `Title @slack(asd123) @slack(qwe456)`
+	target := `asd123`
+	msgID := taskpaperGetSlackMsgID(source)
+	if msgID != target {
+		t.Error("Expected: \n" + target)
+		t.Error("Got: \n" + msgID)
+	}
+
+	source = `Title @slacker(asd123)`
+	target = ``
+	msgID = taskpaperGetSlackMsgID(source)
+	if msgID != target {
+		t.Error("Expected: \n" + target)
+		t.Error("Got: \n" + msgID)
+	}
+}
+
 func TestTaskpaperToSlack(t *testing.T) {
-	source := `Today tasks: @slack(messageid)
+	source := `Today tasks: @slack(qwe)
 	- do something
 		nested text`
-	target := `:calendar: *Today tasks*
+	targetID := `qwe`
+	targetContent := `:calendar: *Today tasks*
 :todo: do something
       nested text`
 
-	result := taskpaperToSlack(source)
-	if result != target {
-		t.Error("Bad transition to slack format")
-		t.Error("Expected: \n" + target)
-		t.Error("Got: \n" + result)
+	msgID, msgContent := taskpaperToSlack(source)
+	if msgID != targetID {
+		t.Error("Bad message ID")
+		t.Error("Expected: \n" + targetID)
+		t.Error("Got: \n" + msgID)
+	}
+
+	if msgContent != targetContent {
+		t.Error("Bad message content")
+		t.Error("Expected: \n" + targetContent)
+		t.Error("Got: \n" + msgContent)
 	}
 }
 
@@ -137,7 +182,19 @@ other shit
 
 	result := taskpaperFindSlackNode(content)
 	if result != target {
-		t.Error("Expected:\n" + target + "\n\nGot:\n" + result)
+		t.Error("Expected:\n" + target)
+		t.Error("Got:\n" + result)
+	}
+}
+
+func TestSlackMessageLinkIDtoTimestamp(t *testing.T) {
+	source := "p1548757857024300"
+	target := "1548757857.024300"
+	result := slackMessageLinkIDtoTimestamp(source)
+
+	if result != target {
+		t.Error("Expected:\n" + target)
+		t.Error("Got:\n" + result)
 	}
 }
 
@@ -147,7 +204,7 @@ asdasd
 	- asdasdasd
 Header with no tag:
 Greater thing:
-	Today tasks: @slack(messageid)
+	Today tasks: @slack(asd123)
 		- do something
 			nested text
 other shit
@@ -155,7 +212,7 @@ other shit
 		- do me
 `
 
-	targetMsgID := `asd`
+	targetMsgID := `asd123`
 	targetMessage := `:calendar: *Today tasks*
 :todo: do something
       nested text`

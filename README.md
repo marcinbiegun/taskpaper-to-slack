@@ -1,9 +1,21 @@
 # taskpaper-to-slack
 
-This program is for syncing tagged taskpaper nodes to messages on
-Slack.
+A tool for automating a workflow I'm following in my
+currect distributed team - we keep our daily todo lists public as
+messages on a Slack channel.
 
-Work in progress, but it works.
+# How it works
+
+It scans taskpaper file for nodes marked with `@slack(channel/msg)` and
+syncs them to Slack.
+
+The message must already exist at slack.
+
+Only task nodes are synced (text nodes remain private).
+
+`@done` and `@doing` tags are are recognized.
+
+Tags and what comes after tags are removed.
 
 ## Example
 
@@ -13,16 +25,19 @@ You have this taskpaper file:
 Some header:
   - buy milk
 
-Today: @slack(messageid)
-  - read emails @done
+Monday, 11 Feb: @slack(B05KSNDD4/p1549566229043400)
+  - read emails @done spent 40m
+  lunch break 1h
+  - release new version @doing
   - comment on pull requets
 ```
 
-The Slack message with id `messageid` will be replaced with:
+The corresponding Slack message will be replaced with:
 
 ```
-:calendar: *Workday*
+:calendar: *Monday, 11 Feb*
 :done: read emails
+:doing: release new version
 :todo: comment on pull requests
 ```
 
@@ -31,5 +46,5 @@ The Slack message with id `messageid` will be replaced with:
 Run with:
 
 ```
-SLACK_TOKEN=foo SLACK_CHANNEL_ID=bar SLACK_SUBDOMAIN=baz go run main.go tasks.taskpaper
+SLACK_TOKEN=foo SLACK_SUBDOMAIN=baz go run main.go tasks.taskpaper
 ```

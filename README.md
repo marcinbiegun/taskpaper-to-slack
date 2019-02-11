@@ -4,9 +4,12 @@ A tool for automating a workflow I'm following in my
 currect distributed team - we keep our daily todo lists public as
 messages on a Slack channel.
 
+It works with plain text to-do lists created by
+[Taskpaper](https://www.taskpaper.com/).
+
 # How it works
 
-It scans taskpaper file for nodes marked with `@slack(channel/msg)` and
+It scans a Taskpaper file for nodes marked with `@slack(channel/msg)` and
 syncs them to Slack.
 
 The message must already exist at slack.
@@ -46,5 +49,5 @@ The corresponding Slack message will be replaced with:
 Run with:
 
 ```
-SLACK_TOKEN=foo SLACK_SUBDOMAIN=baz go run main.go tasks.taskpaper
+SLACK_TOKEN=foo SLACK_SUBDOMAIN=baz ./taskpaper-to-slack tasks.taskpaper
 ```

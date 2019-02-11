@@ -7,7 +7,7 @@ messages on a Slack channel.
 It works with plain text to-do lists created by
 [Taskpaper](https://www.taskpaper.com/).
 
-# How it works
+## How it works
 
 It scans a Taskpaper file for nodes marked with `@slack(channel/msg)` and
 syncs them to Slack.
@@ -18,21 +18,18 @@ Only task nodes are synced (text nodes remain private).
 
 `@done` and `@doing` tags are are recognized.
 
-Tags and what comes after tags are removed.
+Tags and what comes after them is removed.
 
 ## Example
 
 You have this taskpaper file:
 
 ```
-Some header:
-  - buy milk
-
 Monday, 11 Feb: @slack(B05KSNDD4/p1549566229043400)
   - read emails @done spent 40m
   lunch break 1h
   - release new version @doing
-  - comment on pull requets
+  - comment on pull requests
 ```
 
 The corresponding Slack message will be replaced with:

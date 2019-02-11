@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strconv"
 	"testing"
 )
@@ -11,9 +12,8 @@ func TestTaskpaperToSlackHeader(t *testing.T) {
 
 	result := taskpaperToSlackHeader(source)
 	if result != target {
-		t.Error("Bad transition to slack header format")
-		t.Error("Expected: \n" + target)
-		t.Error("Got: \n" + result)
+		t.Error("Expected: " + target)
+		t.Error("Got: " + result)
 	}
 }
 
@@ -30,16 +30,16 @@ func TestTaskpaperToSlackLine(t *testing.T) {
 	target = `      :todo: getmilk`
 	result = taskpaperToSlackLine(source)
 	if result != target {
-		t.Error("Expected: \n" + target)
-		t.Error("Got: \n" + result)
+		t.Error("Expected: " + target)
+		t.Error("Got: " + result)
 	}
 
 	source = `- getmilk @done`
 	target = `:done: getmilk`
 	result = taskpaperToSlackLine(source)
 	if result != target {
-		t.Error("Expected: \n" + target)
-		t.Error("Got: \n" + result)
+		t.Error("Expected: " + target)
+		t.Error("Got: " + result)
 	}
 
 	source = `- getmilk @done(2018-21-29) @doing x`
@@ -60,43 +60,55 @@ func TestTaskpaperToSlackLine(t *testing.T) {
 }
 
 func TestTaskpaperGetSlackMsgId(t *testing.T) {
-	source := `Title @slack(asd123) @slack(qwe456)`
-	target := `asd123`
-	msgID := taskpaperGetSlackMsgID(source)
-	if msgID != target {
-		t.Error("Expected: \n" + target)
-		t.Error("Got: \n" + msgID)
+	_, err := taskpaperGetSlackMsgRef(`Title @slack(asd)`)
+	expectedErr := "Slack tag not found"
+	if err.Error() != expectedErr {
+		t.Error("Expected: " + expectedErr)
+		t.Error("Got: " + fmt.Sprintf("%#v", err))
 	}
 
-	source = `Title @slacker(asd123)`
-	target = ``
-	msgID = taskpaperGetSlackMsgID(source)
-	if msgID != target {
-		t.Error("Expected: \n" + target)
-		t.Error("Got: \n" + msgID)
+	_, err = taskpaperGetSlackMsgRef(`Title @slack(asd/123123)`)
+	expectedErr = "Slack timestamp too short"
+	if err.Error() != expectedErr {
+		t.Error("Expected: " + expectedErr)
+		t.Error("Got: " + fmt.Sprintf("%#v", err))
+	}
+
+	line := "Title @slack(B05KSNDD4/p1549566229043400)"
+	target := slackMsgRef{channel: "B05KSNDD4", timestamp: "1549566229.043400", urlTimestamp: "p1549566229043400"}
+	slackMsgRef, err := taskpaperGetSlackMsgRef(line)
+	if err != nil {
+		t.Error("Expected: no error")
+		t.Error("Got: " + err.Error())
+	}
+	if slackMsgRef != target {
+		t.Error("Expected: \n" + fmt.Sprintf("%#v", target))
+		t.Error("Got: \n" + fmt.Sprintf("%#v", slackMsgRef))
 	}
 }
 
 func TestTaskpaperToSlack(t *testing.T) {
-	source := `Today tasks: @slack(qwe)
+	source := `Today tasks: @slack(B05KSNDD4/p1549566229043400)
 	- do something
-		nested text`
-	targetID := `qwe`
+		nested text
+		- nested task`
+	targetMsgRef := slackMsgRef{channel: "B05KSNDD4", timestamp: "1549566229.043400", urlTimestamp: "p1549566229043400"}
 	targetContent := `:calendar: *Today tasks*
 :todo: do something
-      nested text`
+      :todo: nested task`
 
-	msgID, msgContent := taskpaperToSlack(source)
-	if msgID != targetID {
-		t.Error("Bad message ID")
-		t.Error("Expected: \n" + targetID)
-		t.Error("Got: \n" + msgID)
+	msgRef, msgContent, err := taskpaperToSlack(source)
+	if err != nil {
+		t.Error("Expected: no error")
+		t.Error("Got: " + err.Error())
 	}
-
+	if msgRef != targetMsgRef {
+		t.Error("Expected: " + fmt.Sprintf("%#v", targetMsgRef))
+		t.Error("Got: " + fmt.Sprintf("%#v", msgRef))
+	}
 	if msgContent != targetContent {
-		t.Error("Bad message content")
-		t.Error("Expected: \n" + targetContent)
-		t.Error("Got: \n" + msgContent)
+		t.Error("Expected: " + targetContent)
+		t.Error("Got: " + msgContent)
 	}
 }
 
@@ -119,12 +131,12 @@ func TestIsTodayHeader(t *testing.T) {
 		t.Error("Not recognized correctly: " + strconv.FormatBool(result))
 	}
 
-	result = isTodayHeader("		Header: @slack(123,asd)")
+	result = isTodayHeader("		Header: @slack(asd)")
 	if result != false {
 		t.Error("Not recognized correctly: " + strconv.FormatBool(result))
 	}
 
-	result = isTodayHeader("		Header: @slack(ab1c50e)")
+	result = isTodayHeader("		Header: @slack(asd/123)")
 	if result != true {
 		t.Error("Not recognized correctly: " + strconv.FormatBool(result))
 	}
@@ -158,7 +170,7 @@ asdasd
 	- asdasdasd
 Header with no tag:
 Greater thing:
-	Today tasks: @slack(messageid)
+	Today tasks: @slack(B05KSNDD4/p154956622904340)
 		- do something
 			nested text
 		- and other stuff
@@ -167,11 +179,11 @@ Greater thing:
 		Header inside: 
 			- task
 other shit
-	Second tasks: @slack(messageid)
+	Second tasks: @slack(B05KSNDD4/p154956622922222)
 		- do me
 `
 
-	target := `Today tasks: @slack(messageid)
+	target := `Today tasks: @slack(B05KSNDD4/p154956622904340)
 	- do something
 		nested text
 	- and other stuff
@@ -187,24 +199,13 @@ other shit
 	}
 }
 
-func TestSlackMessageLinkIDtoTimestamp(t *testing.T) {
-	source := "p1548757857024300"
-	target := "1548757857.024300"
-	result := slackMessageLinkIDtoTimestamp(source)
-
-	if result != target {
-		t.Error("Expected:\n" + target)
-		t.Error("Got:\n" + result)
-	}
-}
-
 func TestGetMessageToSync(t *testing.T) {
 	content := `
 asdasd
 	- asdasdasd
 Header with no tag:
 Greater thing:
-	Today tasks: @slack(asd123)
+	Today tasks: @slack(B05KSNDD4/p154956622904340)
 		- do something
 			nested text
 other shit
@@ -212,18 +213,21 @@ other shit
 		- do me
 `
 
-	targetMsgID := `asd123`
-	targetMessage := `:calendar: *Today tasks*
-:todo: do something
-      nested text`
+	targetMsgRef := slackMsgRef{channel: "B05KSNDD4", timestamp: "1549566229.04340", urlTimestamp: "p154956622904340"}
+	targetMsgContent := `:calendar: *Today tasks*
+:todo: do something`
 
-	msgid, message := getMessageToSync(content)
-	if msgid != targetMsgID {
-		t.Error("Expected:\n" + targetMsgID)
-		t.Error("Got:\n" + msgid)
+	msgRef, msgContent, err := getMessageToSync(content)
+	if err != nil {
+		t.Error("Expected: no error")
+		t.Error("Got: " + err.Error())
 	}
-	if message != targetMessage {
-		t.Error("Expected:\n" + targetMessage)
-		t.Error("Got:\n" + message)
+	if msgRef != targetMsgRef {
+		t.Error("Expected: \n" + fmt.Sprintf("%#v", targetMsgRef))
+		t.Error("Got: \n" + fmt.Sprintf("%#v", msgRef))
+	}
+	if msgContent != targetMsgContent {
+		t.Error("Expected:\n" + targetMsgContent)
+		t.Error("Got:\n" + msgContent)
 	}
 }

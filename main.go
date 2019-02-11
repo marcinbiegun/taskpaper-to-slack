@@ -13,10 +13,11 @@ import (
 	"github.com/nlopes/slack"
 )
 
-// TODO:
-// [ ] read token variable
-// [ ] read data from taskpaper file
-// [ ] send data to Slack (replace message)
+type slackMsgRef struct {
+	channel      string
+	timestamp    string
+	urlTimestamp string
+}
 
 func taskpaperToSlackHeader(taskpaper string) (result string) {
 	tagAndAfterRe := regexp.MustCompile("@.*")
@@ -29,6 +30,11 @@ func taskpaperToSlackHeader(taskpaper string) (result string) {
 
 func taskpaperToSlackLine(taskpaper string) (result string) {
 	taskpaper = taskpaperReduceDepth(taskpaper, 1)
+
+	startsWithTaskSymbol, _ := regexp.MatchString(`^\t*- `, taskpaper)
+	if startsWithTaskSymbol == false {
+		return ""
+	}
 
 	// Find done tag
 	doneTagRe := regexp.MustCompile(`@done`)
@@ -58,39 +64,51 @@ func taskpaperToSlackLine(taskpaper string) (result string) {
 
 	// Replace tab indentations as spaces
 	tabRe := regexp.MustCompile("\t")
-	taskpaper = tabRe.ReplaceAllString(taskpaper, "     ")
+	taskpaper = tabRe.ReplaceAllString(taskpaper, "      ")
 
 	return taskpaper
 }
 
-func taskpaperGetSlackMsgID(line string) (msgID string) {
-	slackTagValueRe := regexp.MustCompile(`@slack\(([a-zA-Z0-9]*)\)`)
+func taskpaperGetSlackMsgRef(line string) (msgRef slackMsgRef, err error) {
+	slackTagValueRe := regexp.MustCompile(`@slack\(([a-zA-Z0-9]*)/([a-zA-Z0-9]*)\)`)
 	matches := slackTagValueRe.FindStringSubmatch(line)
-	if len(matches) >= 2 {
-		return matches[1]
+	if len(matches) >= 3 {
+		channel := matches[1]
+		urlTimestamp := matches[2]
+		if len([]rune(urlTimestamp)) < 16 {
+			return msgRef, fmt.Errorf("Slack timestamp too short")
+		}
+		urlTimestmapWithoutP := regexp.MustCompile("^p").ReplaceAllString(urlTimestamp, "")
+		apiTimestamp := urlTimestmapWithoutP[:10] + "." + urlTimestmapWithoutP[10:]
+		return slackMsgRef{channel: channel, timestamp: apiTimestamp, urlTimestamp: urlTimestamp}, nil
 	}
-	return ""
+	return msgRef, fmt.Errorf("Slack tag not found")
 }
 
-func taskpaperToSlack(taskpaper string) (msgID string, msgContent string) {
-	lines := strings.Split(taskpaper, "\n")
-	if len(lines) == 0 {
-		return "", ""
-	}
-
+func taskpaperToSlack(taskpaper string) (msgRef slackMsgRef, msgContent string, err error) {
 	resultLines := make([]string, 0)
-	msgID = ""
+	lines := strings.Split(taskpaper, "\n")
 
 	for index, line := range lines {
 		if index == 0 {
-			msgID = taskpaperGetSlackMsgID(line)
+			msgRef, err = taskpaperGetSlackMsgRef(line)
+			if err != nil {
+				return msgRef, "", err
+			}
 			resultLines = append(resultLines, taskpaperToSlackHeader(line))
 		} else {
-			resultLines = append(resultLines, taskpaperToSlackLine(line))
+			newResultLine := taskpaperToSlackLine(line)
+			if newResultLine != "" {
+				resultLines = append(resultLines, newResultLine)
+			}
 		}
 	}
 
-	return msgID, strings.Join(resultLines, "\n")
+	if len(resultLines) == 0 {
+		return msgRef, "", fmt.Errorf("Nothing to sync")
+	}
+
+	return msgRef, strings.Join(resultLines, "\n"), nil
 }
 
 func lineDepth(line string) (result int) {
@@ -104,7 +122,7 @@ func lineDepth(line string) (result int) {
 
 func isTodayHeader(line string) (result bool) {
 	// match, _ := regexp.MatchString(`@slack\(\d{4}-\d{2}-\d{2},[a-zA-Z0-9]+\)`, line)
-	match, _ := regexp.MatchString(`@slack\([a-zA-Z0-9]+\)`, line)
+	match, _ := regexp.MatchString(`@slack\([a-zA-Z0-9]+/[a-zA-Z0-9]+\)`, line)
 	return match
 }
 
@@ -146,38 +164,27 @@ func taskpaperFindSlackNode(content string) (result string) {
 	return strings.Join(readLinesCorrectedDepth, "\n")
 }
 
-func getMessageToSync(taskpaper string) (msgid string, result string) {
+func getMessageToSync(taskpaper string) (msgRef slackMsgRef, result string, err error) {
 	taskpaperNode := taskpaperFindSlackNode(taskpaper)
-	messageID, messageContent := taskpaperToSlack(taskpaperNode)
-	return messageID, messageContent
+	msgRef, messageContent, err := taskpaperToSlack(taskpaperNode)
+	return msgRef, messageContent, err
 }
 
-func slackMessageLinkIDtoTimestamp(id string) (timestamp string) {
-	firstPRe := regexp.MustCompile("^p")
-	idWithoutP := firstPRe.ReplaceAllString(id, "")
-	index := 10
-	idWithDot := idWithoutP[:index] + "." + idWithoutP[index:]
-	return idWithDot
-}
-
-func apiSlackUpdateMessage(slackToken string, channelID string, messageID string, content string) (string, error) {
-	msgTimestamp := slackMessageLinkIDtoTimestamp(messageID)
+func apiSlackUpdateMessage(slackToken string, msgRef slackMsgRef, content string) (err error) {
 	api := slack.New(slackToken)
-	_, _, _, err := api.UpdateMessage(channelID, msgTimestamp, slack.MsgOptionText(content, false))
+	_, _, _, err = api.UpdateMessage(msgRef.channel, msgRef.timestamp, slack.MsgOptionText(content, false))
 	if err != nil {
-		return messageID, err
+		return err
 	}
-	return messageID, nil
+	return nil
 }
 
-func watchFileUpdateSlackOnChange(filePath string, slackSubdomain string, slackToken string, slackChannelID string) {
+func watchFileUpdateSlackOnChange(filePath string, slackToken string, slackSubdomain string) {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer watcher.Close()
-
-	fmt.Println("Watching file:", filePath)
 
 	done := make(chan bool)
 	go func() {
@@ -187,14 +194,12 @@ func watchFileUpdateSlackOnChange(filePath string, slackSubdomain string, slackT
 				if !ok {
 					return
 				}
-				//log.Println("event:", event)
 				if event.Op&fsnotify.Write == fsnotify.Write || event.Op&fsnotify.Create == fsnotify.Create {
-					//log.Println("modified file:", event.Name)
-					slackMessageID, err := updateSlackMessageFromFile(filePath, slackToken, slackChannelID)
+					slackMsgRef, err := updateSlackMessageFromFile(filePath, slackToken)
 					if err != nil {
 						fmt.Println("Slack update error:", err)
 					}
-					fmt.Printf("Updated: https://%s.slack.com/archives/%s/%s\n", slackSubdomain, slackChannelID, slackMessageID)
+					fmt.Printf("Updated message https://%s.slack.com/archives/%s/%s\n", slackSubdomain, slackMsgRef.channel, slackMsgRef.urlTimestamp)
 				}
 			case err, ok := <-watcher.Errors:
 				if !ok {
@@ -212,32 +217,43 @@ func watchFileUpdateSlackOnChange(filePath string, slackSubdomain string, slackT
 	<-done
 }
 
-func updateSlackMessageFromFile(filePath string, slackToken string, slackChannelID string) (msgID string, err error) {
+func updateSlackMessageFromFile(filePath string, slackToken string) (msgRef slackMsgRef, err error) {
 	data, err := ioutil.ReadFile(filePath)
 	if err != nil {
-		return "", err
+		return msgRef, err
 	}
-	msgID, msgContent := getMessageToSync(string(data))
-	_, err = apiSlackUpdateMessage(slackToken, slackChannelID, msgID, msgContent)
+	msgRef, msgContent, err := getMessageToSync(string(data))
 	if err != nil {
-		return msgID, err
+		return msgRef, err
 	}
-	return msgID, nil
+
+	err = apiSlackUpdateMessage(slackToken, msgRef, msgContent)
+	if err != nil {
+		return msgRef, err
+	}
+	return msgRef, nil
 }
 
 func main() {
 	slackToken := os.Getenv("SLACK_TOKEN")
-	slackChannelID := os.Getenv("SLACK_CHANNEL_ID")
 	slackSubdomain := os.Getenv("SLACK_SUBDOMAIN")
-	fmt.Println("SLACK_TOKEN: " + slackToken)
-	fmt.Println("SLACK_CHANNEL_ID: " + slackChannelID)
-	fmt.Println("SLACK_SUBDOMAIN: " + slackSubdomain)
+
+	if len(slackToken) < 2 {
+		fmt.Println("ERROR: no SLACK_TOKEN env var found")
+		return
+	}
+
+	if len(slackToken) < 2 {
+		fmt.Println("ERROR: no SLACK_SUBDOMAIN env var found")
+		return
+	}
 
 	if len(os.Args) < 2 {
-		fmt.Println("ERROR: the first parameter should be taskpaper filename")
+		fmt.Println("ERROR: not filename found in first parameter")
 		return
 	}
 	filePath := os.Args[1]
 
-	watchFileUpdateSlackOnChange(filePath, slackSubdomain, slackToken, slackChannelID)
+	watchFileUpdateSlackOnChange(filePath, slackToken, slackSubdomain)
+	fmt.Println("Watching file: ", filePath)
 }

@@ -22,22 +22,24 @@ Tags and what comes after them is removed.
 
 ## Example
 
-You have this taskpaper file:
+This taskpaper file:
 
 ```
 Monday, 11 Feb: @slack(B05KSNDD4/p1549566229043400)
-  - read emails @done spent 40m
-  lunch break 1h
-  - release new version @doing
-  - comment on pull requests
+	- read emails @done spent 40m
+	lunch break 1h
+	- release new version @doing
+		- ping support team about the release
+	- comment on pull requests
 ```
 
-The corresponding Slack message will be replaced with:
+Is posted to Slack as:
 
 ```
 :calendar: *Monday, 11 Feb*
 :done: read emails
 :doing: release new version
+     :todo: ping support team about the release
 :todo: comment on pull requests
 ```
 
